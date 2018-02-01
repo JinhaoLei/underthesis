@@ -13,6 +13,7 @@ import cnn_model
 import os 
 import gc
 
+
 parser = argparse.ArgumentParser(description='PyTorch Wikitext-2 RNN/LSTM Language Model')
 '''parser.add_argument('--train_data', type=str, default='./data/train.csv',
                     help='')
@@ -20,15 +21,15 @@ parser.add_argument('--dev_data', type=str, default='./data/dev.csv',
                     help='')
 parser.add_argument('--test_data', type=str, default='./data/test.csv',
                     help='')'''
-parser.add_argument('--data_path', type=str, default='/home1/ljh/data/')
+parser.add_argument('--data_path', type=str, default='/home1/ljh/data/newdata/')
 parser.add_argument('--model_path', type=str, default='./model/')
 parser.add_argument('--type', type=int, default=11,
                     help='')
 parser.add_argument('--model', type=str, default='LSTM',
                     help='type of recurrent net (RNN_TANH, RNN_RELU, LSTM, GRU)')
-parser.add_argument('--emsize', type=int, default=40,
+parser.add_argument('--emsize', type=int, default=20000,
                     help='size of word embeddings')
-parser.add_argument('--hidden_size', type=int, default=80,
+parser.add_argument('--hidden_size', type=int, default=50,
                     help='number of hidden units per layer')
 parser.add_argument('--nlayers', type=int, default=1,
                     help='number of layers')
@@ -36,13 +37,13 @@ parser.add_argument('--lr', type=float, default=0.007,
                     help='initial learning rate')
 parser.add_argument('--clip', type=float, default=0.5,   #??try
                     help='gradient clipping')
-parser.add_argument('--max_epoch', type=int, default=30,
+parser.add_argument('--max_epoch', type=int, default=50,
                     help='')
-parser.add_argument('--epochs', type=int, default=50,
+parser.add_argument('--epochs', type=int, default=150,
                     help='upper epoch limit')
-parser.add_argument('--batch_size', type=int, default=512, metavar='N',
+parser.add_argument('--batch_size', type=int, default=256, metavar='N',
                     help='batch size')
-parser.add_argument('--e_batch_size', type=int, default=200, metavar='N',
+parser.add_argument('--e_batch_size', type=int, default=100, metavar='N',
                     help='')
 parser.add_argument('--dropout', type=float, default=0.5,
                     help='dropout applied to layers (0 = no dropout)')
@@ -54,25 +55,35 @@ parser.add_argument('--cuda', action='store_true',
                     help='use CUDA')
 parser.add_argument('--save', type=str,  default='model.pt',
                     help='path to save the final model')
-parser.add_argument('--method', type=str,  default='cnn-lstm',
-                    help='ave, sample, cnn-lstm')
+parser.add_argument('--method', type=str,  default='WDCNN',
+                    help='ave, sample, cnn, single-lstm, LR, WDCNN, MSCNN')
 parser.add_argument('--ifnormalize', type=int,  default=0,
+                    help='')
+parser.add_argument('--att', type=int,  default=0,
                     help='')
 parser.add_argument('--data_length', type=int,  default=500,
                     help='')
-parser.add_argument('--num_channel', type=int,  default=4,
+parser.add_argument('--num_channel', type=int,  default=1,
                     help='')
 parser.add_argument('--c1_channel', type=int,  default=4,
                     help='')
 parser.add_argument('--c2_channel', type=int,  default=4,
                     help='')
-parser.add_argument('--c1_kernel', type=int,  default=2,
+parser.add_argument('--c1_kernel', type=int,  default=(2, 4),
                     help='')
 parser.add_argument('--c2_kernel', type=int,  default=2,
                     help='')
-parser.add_argument('--mlp_in', type=int,  default=4 * 97,
+parser.add_argument('--mlp_in', type=int,  default=4 * 100,
                     help='')
-parser.add_argument('--mlp_out', type=int,  default=40,
+parser.add_argument('--mlp_out', type=int,  default=80,
+                    help='')
+parser.add_argument('--target_c', type=int,  default=0,
+                    help='')
+parser.add_argument('--optimizer', type=str,  default='Adam',
+                    help='')
+parser.add_argument('--weak_number', type=int,  default=0,
+                    help='')
+parser.add_argument('--checkpoint', type=str,  default='',
                     help='')
 args = parser.parse_args()
 
@@ -99,7 +110,7 @@ def print_args():
     print 'embedding size %d'%(args.emsize)
     print 'hidden_size %d'%(args.hidden_size)
     print 'num_layers %d'%(args.nlayers)
-    print 'init_lr %.1f'%(args.lr)
+    print 'init_lr %.4f'%(args.lr)
     print 'clip %.1f'%(args.clip)
     print 'max_epoch %d'%(args.max_epoch)
     print 'epochs %d'%(args.epochs)
@@ -111,53 +122,63 @@ def print_args():
     print 'data_length %d'%(args.data_length)
     print 'c1_channel %d'%(args.c1_channel)
     print 'c2_channel %d'%(args.c2_channel)
-    print 'c1_kernel %d'%(args.c1_kernel)
+    #print 'c1_kernel %d'%(args.c1_kernel)
     print 'c2_kernel %d'%(args.c2_kernel)
     print 'mlp_in %d'%(args.mlp_in)
     print 'mlp_out %d'%(args.mlp_out)
+    print 'optimizer %s'%(args.optimizer)
+    print 'weak_number %d'%(args.weak_number)
+    print 'if_att %d'%(args.att)
 
 print_args()
-
-def read_data_cnn(mapfile, iftrain=True):
-    data = []
-    y = []
-    with open(mapfile) as f:
-        for n, line in enumerate(f):
-            x, target = line.strip().split('\t')
-            data.append(int(x))
-            y.append(int(target))
-    data = torch.IntTensor(data).contiguous()
-    y = torch.LongTensor(y).contiguous()
-    print 'cnn map data:', data.size()
-    print 'cnn map data y:', y.size()
-    dataset = Data.TensorDataset(data_tensor=data, target_tensor=y)  
-    if iftrain:
-        data_loader = Data.DataLoader(dataset=dataset, batch_size=args.batch_size, shuffle=iftrain, drop_last=iftrain)
-    else:
-        data_loader = Data.DataLoader(dataset=dataset, batch_size=args.e_batch_size, shuffle=iftrain, drop_last=iftrain)
-    return data_loader               #[num_of_data, length, num_of_channel]
 
 
 def read_data(xfile, yfile, iftrain=True):
     data = []
     y = []
-    with open(xfile) as f:
-        for n, line in enumerate(f):
-            line = line.strip().split('\t')
-            line = [float(line[i]) for i in range(len(line))]
-            data.append(line)
-            if n%10000==0:
-                print 'read %s %d'%(xfile, n)
+    data = np.load(xfile) #(8200, 50, 100, 4)
+    if args.weak_number != 0 and iftrain:
+        index_map = [] 
+        with open(args.data_path + str(args.weak_number) + '_index.csv') as f:
+            for n, line in enumerate(f):
+                index_map.append(int(line))
+        print 'finish reading index map!...'
+        data = data[index_map]
+
+
+
+    data = torch.Tensor(data).contiguous()
+    if args.method == 'cnn' and args.num_channel ==4:
+        #data = data.view(data.size()[0], 50, 100, 4)
+        data = data.view(data.size()[0], data.size()[1] * data.size()[2])
+        data = data.view(data.size()[0], -1, args.emsize)
+    elif args.method == 'LR' and args.num_channel ==4:
+        data = data.view(data.size()[0], data.size()[1] * data.size()[2])
+    elif args.method == 'LR' and args.num_channel ==1:
+        pass
+    elif args.method == 'WDCNN':
+        data = data[:, :2048]
+    elif args.method == 'MSCNN':
+        data = data[:, :1024, :].contiguous()
+        data = data.view(data.size()[0], data.size()[1] * data.size()[2])
+    elif args.num_channel == 1:
+        data = data.view(data.size()[0], -1, args.emsize)
+    elif args.method == 'ave' or args.method == 'sample':
+        data = data.view(data.size()[0], 50, 40)
+    
+
+    print 'finish reading %s'%(xfile)
 
     with open(yfile) as f:
         for n, line in enumerate(f):
             y.append(int(line.strip()))
-            if n%10000==0:
-                print 'read %s %d'%(yfile, n)
-
-    data = torch.Tensor(data)
-    data = data.view(data.size()[0],  -1, args.num_channel * 10).contiguous()
+    if args.weak_number != 0 and iftrain:
+        y = [y[i] for i in index_map]
     y = torch.LongTensor(y).contiguous()
+    print 'finish reading %s'%(yfile)
+
+    
+    
     print data.size()
     print y.size()
     dataset = Data.TensorDataset(data_tensor=data, target_tensor=y)  
@@ -165,47 +186,48 @@ def read_data(xfile, yfile, iftrain=True):
         data_loader = Data.DataLoader(dataset=dataset, batch_size=args.batch_size, shuffle=iftrain, drop_last=iftrain)
     else:
         data_loader = Data.DataLoader(dataset=dataset, batch_size=args.e_batch_size, shuffle=iftrain, drop_last=iftrain)
-    return data_loader               #[num_of_data, length, num_of_channel]
+    return data_loader              #[num_of_data, length, num_of_channel]
+
+if args.num_channel==4:
+    data_path = args.data_path + 'fourA'
+elif args.num_channel==1:
+    data_path = args.data_path + 'single'
+
 
 if args.ifnormalize==1:
-    data_path = args.data_path + 'window_data/'
+    data_path = data_path +  '_normal/'
 else:
-    data_path = args.data_path + 'window_data_no_normalize/'
+    data_path = data_path +  '/'
 
-if args.method == 'ave':
-    train_data = data_path + 'train/' + 'train_ave'
-    train_label = data_path + 'train/' + 'train_ave_gold'
-    dev_data = data_path + 'dev/' + 'dev_ave'
-    dev_label = data_path + 'dev/' + 'dev_ave_gold'
-    test_data = data_path + 'test/' + 'test_ave'
-    test_label = data_path + 'test/' + 'test_ave_gold'
-    train_data = read_data(train_data, train_label, True)
-    dev_data = read_data(dev_data, dev_label, False)
-    test_data = read_data(test_data, test_label, False)
-elif args.method == 'sample':
-    train_data = data_path + 'train/' + 'train_sample'
-    train_label = data_path + 'train/' + 'train_sample_gold'
-    dev_data = data_path + 'dev/' + 'dev_sample'
-    dev_label = data_path + 'dev/' + 'dev_sample_gold'
-    test_data = data_path + 'test/' + 'test_sample'
-    test_label = data_path + 'test/' + 'test_sample_gold'
-    train_data = read_data(train_data, train_label, True)
-    dev_data = read_data(dev_data, dev_label, False)
-    test_data = read_data(test_data, test_label, False)
-elif args.method == 'cnn-lstm':
-    train_data = read_data_cnn(args.data_path + 'cnn_data/train/map.csv', True)
-    dev_data = read_data_cnn(args.data_path + 'cnn_data/dev/map.csv', False)
-    test_data = read_data_cnn(args.data_path + 'cnn_data/test/map.csv', False)
+if args.num_channel==4:
+    train_data = data_path + args.method + '/train.npy'
+    dev_data = data_path + args.method + '/dev.npy'
+    test_data = data_path + args.method + '/test.npy'
 
-'''print 'train_data shape:'
-print train_data.shape()
-print 'dev_data_shape'
-print dev_data.shape()
-print 'test_data_shape'
-print test_data.shape()'''
-'''train_data = batchify(corpus.train, args.batch_size)
-val_data = batchify(corpus.valid, eval_batch_size)
-test_data = batchify(corpus.test, eval_batch_size)'''
+elif args.num_channel==1:
+    train_data = data_path + args.method + '/' + str(args.target_c) + '_' + 'train.npy'
+    dev_data = data_path + args.method + '/' + str(args.target_c) + '_' + 'dev.npy'
+    test_data = data_path + args.method + '/' + str(args.target_c) + '_' + 'test.npy'
+
+if (args.method == 'LR' and args.num_channel==1) or (args.method == 'WDCNN'):
+    train_data = data_path + 'cnn' + '/' + str(args.target_c) + '_' + 'train.npy'
+    dev_data = data_path + 'cnn' + '/' + str(args.target_c) + '_' + 'dev.npy'
+    test_data = data_path + 'cnn' + '/' + str(args.target_c) + '_' + 'test.npy'
+
+elif (args.num_channel==4 and args.method =='LR') or args.method == 'MSCNN':
+    train_data = data_path + 'cnn' + '/train.npy'
+    dev_data = data_path + 'cnn' + '/dev.npy'
+    test_data = data_path + 'cnn' + '/test.npy'
+
+train_label = args.data_path + 'train_gold.csv'
+dev_label = args.data_path + 'dev_gold.csv'
+test_label = args.data_path + 'test_gold.csv'
+ 
+
+train_data = read_data(train_data, train_label, True)
+dev_data = read_data(dev_data, dev_label,  False)
+test_data = read_data(test_data, test_label,  False)
+
 
 ###############################################################################
 # Build the model
@@ -213,33 +235,25 @@ test_data = batchify(corpus.test, eval_batch_size)'''
 
 ntokens = args.type
 criterion = nn.CrossEntropyLoss()
-ifcnn = False
-if args.method == 'cnn-lstm':
-    ifcnn = True
-model = model.RNNModel(ifcnn, args.c1_channel, args.c2_channel, args.c1_kernel, args.c2_kernel, 
-        args.mlp_in, args.mlp_out, args.model, ntokens, args.emsize, args.hidden_size, args.nlayers, args.dropout)
+method = ''
+if args.method == 'cnn' and args.num_channel ==4:
+    method = 'cnn'
+elif args.method == 'LR':
+    method = 'LR'
+elif args.method == 'WDCNN':
+    method = 'wdcnn'
+elif args.method == 'MSCNN':
+    method = 'mscnn'
+if args.checkpoint == '':
+    model = model.RNNModel(method, args.c1_channel, args.c2_channel, args.c1_kernel, args.c2_kernel, 
+        args.mlp_in, args.mlp_out, args.model, ntokens, args.emsize, args.hidden_size, args.nlayers, args.att, args.dropout)
+else:
+    model = torch.load(args.checkpoint)
+
 if args.cuda:
     model.cuda()
     criterion.cuda()
 
-'''def extract(data, type):
-    x = []
-    del x
-    gc.collect()
-    x = []
-    start_time = time.time()
-    for i in range(len(data)):
-        numfile, n = data[i] / 10000, data[i] % 10000
-        if type == 'train':
-            adata = np.load(args.data_path + 'cnn_data/train/' + str(numfile) + '/' + str(n) + '.npy')
-        elif type == 'dev':
-            adata = np.load(args.data_path + 'cnn_data/dev/' + str(numfile) + '/' + str(n) + '.npy')
-        elif type == 'test':
-            adata = np.load(args.data_path + 'cnn_data/test/' + str(numfile) + '/' + str(n) + '.npy')
-        x.append(adata)
-    end_time = time.time()
-    print start_time - end_time
-    return torch.Tensor(x)'''
 
 ###############################################################################
 # Training code
@@ -263,16 +277,15 @@ def evaluate(data_source, type):
     hidden = model.init_hidden(args.e_batch_size)
     confusion = torch.zeros(args.type, args.type)
     for step, (data, targets) in enumerate(data_source):
-        if args.method == 'cnn-lstm':
-            data = extract(data, type)
-            print data.size()
-            num += data.size()[0]
-            data = data.view(data.size()[0] * data.size()[1], 1, data.size()[2], data.size()[3])
-            print 'transformed:', data.size()
-            data = Variable(data.cuda(), volatile=True)
-        else:
-            data = Variable(data.cuda(), volatile=True)
-            num += data.size()[0]
+        num += data.size()[0]
+        #if args.method == 'cnn' and args.num_channel ==4:
+        #   data = data.view(data.size()[0] * data.size()[1], 1, data.size()[2], data.size()[3])
+        if args.method == 'WDCNN' or args.method == 'MSCNN':
+            
+
+            data = data.view(data.size()[0], 1, data.size()[1], 1)
+        data = Variable(data.cuda(), volatile=True)
+        
         targets = Variable(targets.cuda(), volatile=True)
         output, hidden = model(args.e_batch_size, data, hidden)
         max_index = output.data.max(dim = 1)[1]
@@ -281,7 +294,8 @@ def evaluate(data_source, type):
         correct += max_index.eq(targets.data.view_as(max_index)).sum()
         loss = criterion(output, targets)
         total_loss += loss.data
-        hidden = repackage_hidden(hidden)
+        if args.method != 'LR':
+            hidden = repackage_hidden(hidden)
     #print confusion
     print str(correct) + '/' + str(num)
     acc = correct / float(num)
@@ -303,24 +317,27 @@ def train():
     for step, (data, targets) in enumerate(train_data):
         # Starting each batch, we detach the hidden state from how it was previously produced.
         # If we didn't, the model would try backpropagating all the way to start of the dataset.
-        if args.method == 'cnn-lstm':
-            data = extract(data, 'train')
-            print data.size()
-            num += data.size()[0]
-            data = data.view(data.size()[0] * data.size()[1], 1, data.size()[2], data.size()[3])
-            print 'transformed:', data.size()
-            data = Variable(data.cuda())
-        else:
-            data = Variable(data.cuda())
-            num += data.size()[0]
+        num += data.size()[0]
+        #if args.method == 'cnn' and args.num_channel ==4:
+        #    data = data.view(data.size()[0] * data.size()[1], 1, data.size()[2], data.size()[3])
+        #print targets
+        if args.method == 'WDCNN' or args.method == 'MSCNN':
+            #data = data[:, :2048]
+            data = data.view(data.size()[0], 1, data.size()[1], 1)
+        data = Variable(data.cuda())
         targets = Variable(targets.cuda())
-        
-        hidden = repackage_hidden(hidden)
+        if args.method != 'LR':
+            hidden = repackage_hidden(hidden)
         model.zero_grad()
+        #print data.size()
         output, hidden = model(args.batch_size, data, hidden)
         max_index = output.data.max(dim = 1)[1]
         correct += max_index.eq(targets.data.view_as(max_index)).sum()
-        optimizer = optim.Adagrad(model.parameters(), lr = lr)
+        if args.optimizer == 'SGD':
+            #print 'SGD'
+            optimizer = optim.SGD(model.parameters(), lr = lr)
+        else:
+            optimizer = optim.Adagrad(model.parameters(), lr = lr)
         loss = criterion(output, targets)
         for i in range(len(max_index)):
             confusion[targets.data[i]][max_index[i]] +=1
@@ -336,37 +353,69 @@ def train():
     return acc, cur_loss
 
 # Loop over epochs.
-lr = args.lr
-best_val_acc = None
-best_test = -1.0
+if args.checkpoint == '':
+    lr = args.lr
+    best_val_acc = None
+    best_test = -1.0
+    last_name = ''
 
-# At any point you can hit Ctrl + C to break out of training early.
-try:
-    for epoch in range(1, args.epochs+1):
-        epoch_start_time = time.time()
-        train_acc, train_loss = train()
-        val_acc, val_loss = evaluate(dev_data, 'dev')
-        test_acc, _ = evaluate(test_data, 'test')
-        # Save the model if the validation loss is the best we've seen so far.
-        if not best_val_acc or val_acc > best_val_acc:
-            #with open(args.model_path + str(val_acc) + '_' + args.save, 'wb') as f:
-                #torch.save(model, f)
-            best_val_acc = val_acc
-            best_test = test_acc
-        else:
-            # Anneal the learning rate if no improvement has been seen in the validation dataset.
-            if epoch > args.max_epoch:
-                lr *= 0.9
+    # At any point you can hit Ctrl + C to break out of training early.
+    try:
+        for epoch in range(1, args.epochs+1):
+            epoch_start_time = time.time()
+            train_acc, train_loss = train()
+            val_acc, val_loss = evaluate(dev_data, 'dev')
+            test_acc, _ = evaluate(test_data, 'test')
+            # Save the model if the validation loss is the best we've seen so far.
+            if not best_val_acc or val_acc > best_val_acc:
+                if args.num_channel == 1:
+                    if args.weak_number !=0:
+                        tosave = "%s%s_%d_%d_%.4f_%.4f.pt"%(args.model_path, args.method, args.target_c, args.weak_number, val_acc, test_acc)
+                    else:
+                        tosave = "%s%s_%d_%.4f_%.4f.pt"%(args.model_path, args.method, args.target_c, val_acc, test_acc)
+                else:
+                    if args.weak_number !=0:
+                        tosave = "%s%s_%d_%.4f_%.4f.pt"%(args.model_path, args.method, args.weak_number, val_acc, test_acc)
+                    else:
+                        tosave = "%s%s_%.4f_%.4f.pt"%(args.model_path, args.method, val_acc, test_acc)
+                with open(tosave, 'wb') as f:
+                    torch.save(model, f)
+                    if last_name!= '':
+                        os.remove(last_name)
+                    last_name = tosave
+                best_val_acc = val_acc
+                best_test = test_acc
+            else:
+                # Anneal the learning rate if no improvement has been seen in the validation dataset.
+                '''if epoch == 100:
+                    lr = 0.0002
+                elif epoch == 200:
+                    lr = 0.0001'''
+                if epoch > args.max_epoch:
+                    lr *= 0.95
 
-
+            print('-' * 89)
+            print('| end of epoch {:3d} | lr: {:.6f} | time: {:5.2f}s |\n| train acc {:5.4f} | train loss {:5.7f} |\n| valid acc {:5.4f} | '
+                    'valid loss {:5.7f} |\n| test acc {:5.4f} | best acc {:.4f}'.format(epoch, lr, (time.time() - epoch_start_time), train_acc, train_loss,
+                                               val_acc, val_loss, test_acc, best_test))
+            print('-' * 89)
+    except KeyboardInterrupt:
         print('-' * 89)
-        print('| end of epoch {:3d} | lr: {:.6f} | time: {:5.2f}s |\n| train acc {:5.4f} | train loss {:5.7f} |\n| valid acc {:5.4f} | '
-                'valid loss {:5.7f} |\n| test acc {:5.4f} | best acc {:.4f}'.format(epoch, lr, (time.time() - epoch_start_time), train_acc, train_loss,
-                                           val_acc, val_loss, test_acc, best_test))
-        print('-' * 89)
-except KeyboardInterrupt:
+        print('Exiting from training early')
+
+else:
+    
+    epoch_start_time = time.time()
+    val_acc, val_loss = evaluate(dev_data, 'dev')
+    test_acc, _ = evaluate(test_data, 'test')
+      
+
     print('-' * 89)
-    print('Exiting from training early')
+    print('| time: {:5.2f}s |\n| valid acc {:5.4f} | '
+                    'valid loss {:5.7f} |\n| test acc {:5.4f} |'.format((time.time() - epoch_start_time), 
+                        val_acc, val_loss, test_acc))
+    print('-' * 89)
+
 
 # Load the best saved model.
 #with open(args.save, 'rb') as f:
