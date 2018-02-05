@@ -152,9 +152,9 @@ class RNNModel(nn.Module):
         else:
             emb = input            #emb = self.drop(input)
         output, hidden = self.rnn(emb, hidden)
+
         #output = self.drop(output)
-        #if self.att == 1:
-        if 0:
+        if self.att == 1:
             batch_size, seq_size = output.size()[0], output.size()[1]
             output = output.contiguous().view(output.size()[0] * output.size()[1], -1)
             att = F.tanh(self.attfc(output))
@@ -170,6 +170,7 @@ class RNNModel(nn.Module):
                 final_hidden = hidden[0][-1]   #[batch,hidden_size]
             else:
                 final_hidden = hidden[-1]
+            #final_hidden = torch.mean(output, 1)
         #print final_hidden.size()
         #print '=[batch, hidden_size]??'
         decoded = self.decoder(final_hidden)   #[batch_size, classes]

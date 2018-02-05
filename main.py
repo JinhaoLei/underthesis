@@ -276,6 +276,9 @@ def evaluate(data_source, type):
     num = 0
     hidden = model.init_hidden(args.e_batch_size)
     confusion = torch.zeros(args.type, args.type)
+    hiddenstates = []
+    finaloutput = []
+    predictions = []
     for step, (data, targets) in enumerate(data_source):
         num += data.size()[0]
         #if args.method == 'cnn' and args.num_channel ==4:
@@ -289,6 +292,9 @@ def evaluate(data_source, type):
         targets = Variable(targets.cuda(), volatile=True)
         output, hidden = model(args.e_batch_size, data, hidden)
         max_index = output.data.max(dim = 1)[1]
+        #predictions.append(max_index.cpu().numpy())
+        #hiddenstates.append(output1.cpu().data.numpy())
+        #finaloutput.append(output.cpu().data.numpy())
         for i in range(len(max_index)):
             confusion[targets.data[i]][max_index[i]] +=1
         correct += max_index.eq(targets.data.view_as(max_index)).sum()
@@ -300,6 +306,13 @@ def evaluate(data_source, type):
     print str(correct) + '/' + str(num)
     acc = correct / float(num)
     cur_loss = total_loss[0] / (num/args.batch_size)
+    '''a = np.vstack(hiddenstates)
+    b = np.vstack(finaloutput)
+    c = np.vstack(predictions)
+    c = np.reshape(c, 3300)
+    np.save('./parameters/fourA/hidden.npy', a)
+    np.save('./parameters/fourA/final.npy', b)
+    np.save('./parameters/fourA/predictions.npy', c)'''
     return acc, cur_loss
 
 
